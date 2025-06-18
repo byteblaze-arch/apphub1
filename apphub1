@@ -1,0 +1,1153 @@
+Folder Structure:
+
+apphub-demo/
+
+├── frontend/
+
+│   └── main.py
+
+├── backend/
+
+│   └── main.py
+
+└── README.md
+
+-------- backend/main.py --------
+
+from flask import Flask app = Flask(name)
+
+@app.route("/hello") def hello(): return {"message": "Hello from Backend!"}
+
+if name == "main": app.run(host='0.0.0.0', port=8080)
+
+-------- frontend/main.py --------
+
+import os from flask import Flask, jsonify import requests
+
+app = Flask(name) BACKEND_URL = os.getenv("BACKEND_URL")
+
+@app.route("/") def index(): try: response = requests.get(f"{BACKEND_URL}/hello") return jsonify({"from_frontend": True, "backend_response": response.json()}) except Exception as e: return jsonify({"error": str(e)}), 500
+
+if name == "main": app.run(host='0.0.0.0', port=8080)
+
+-------- README.md --------
+
+App Hub Demo (Two-Project GCP Setup)
+
+Overview
+
+This is a demo of Google Cloud Application Hub using two GCP projects:
+
+frontend-service (in project-a)
+
+backend-service (in project-b)
+
+
+Steps
+
+1. Deploy Backend
+
+cd backend
+gcloud config set project project-b
+gcloud run deploy backend-service \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+
+2. Deploy Frontend
+
+cd frontend
+export BACKEND_URL=https://backend-service-xyz.a.run.app
+
+gcloud config set project project-a
+gcloud run deploy frontend-service \
+  --source . \
+  --region us-central1 \
+  --set-env-vars BACKEND_URL=$BACKEND_URL \
+  --allow-unauthenticated
+
+3. Create and Register Services in App Hub
+
+# In project-a
+gcloud apphub applications create my-demo-app \
+  --display-name="Demo App" \
+  --region=us-central1
+
+gcloud apphub services register frontend-service \
+  --application=my-demo-app \
+  --location=us-central1 \
+  --service-type=RUN \
+  --service-uri=https://frontend-service-xyz.a.run.app
+
+# In project-b
+gcloud apphub services register backend-service \
+  --application=my-demo-app \
+  --location=us-central1 \
+  --service-type=RUN \
+  --service-uri=https://backend-service-xyz.a.run.app
+
+4. Validate in App Hub UI
+
+Navigate to: Cloud Console > Application Hub > Applications > my-demo-app
+
+
+5. Test
+
+Open frontend URL
+
+№#######$$$$$$$$###########
+
+Here's a practical PoC (Proof of Concept) to demonstrate Google Cloud Application Hub (App Hub) using a two-project setup and showcasing how App Hub provides an application-centric view of your cloud services.
+
+✅ Goal
+To demonstrate App Hub's capabilities:
+App-centric grouping of GCP resources.
+Visualization of service-to-service interactions.
+Cross-project application view.
+
+🔧 Setup Overview
+You will build a simple application split across 2 GCP projects, each with a different service:
+Project
+Service
+Description
+project-a
+Cloud Run: Frontend Service
+Web UI that calls backend
+project-b
+Cloud Run: Backend Service
+Responds to frontend API requests
+
+
+📁 Architecture
+[Frontend Service - project-a] ---> [Backend Service - project-b]
+     (Cloud Run)                         (Cloud Run)
+
+
+📌 Step-by-Step Implementation
+1. Enable Required APIs
+In both project-a and project-b:
+gcloud services enable apphub.googleapis.com \
+  run.googleapis.com \
+  compute.googleapis.com
+
+
+2. Deploy Backend (in project-b)
+gcloud config set project project-b
+
+gcloud run deploy backend-service \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+
+📝 Your backend-service should expose a simple endpoint like /hello.
+
+3. Deploy Frontend (in project-a)
+gcloud config set project project-a
+
+# Ensure the frontend fetches the backend-service URL
+export BACKEND_URL=https://backend-service-xyz.a.run.app
+
+gcloud run deploy frontend-service \
+  --source . \
+  --region us-central1 \
+  --set-env-vars BACKEND_URL=$BACKEND_URL \
+  --allow-unauthenticated
+
+📝 The frontend makes a fetch/XHR to BACKEND_URL + '/hello'.
+
+4. Create Application in App Hub
+Switch back to project-a:
+gcloud config set project project-a
+
+gcloud apphub applications create my-demo-app \
+  --display-name="Demo Cross-Project App" \
+  --region=us-central1
+
+
+5. Register Services to App Hub
+Now register the two services:
+In project-a (frontend):
+gcloud apphub services register frontend-service \
+  --application=my-demo-app \
+  --location=us-central1 \
+  --service-type=RUN \
+  --service-uri=https://frontend-service-xyz.a.run.app
+
+In project-b (backend):
+gcloud config set project project-b
+
+gcloud apphub services register backend-service \
+  --application=my-demo-app \
+  --location=us-central1 \
+  --service-type=RUN \
+  --service-uri=https://backend-service-xyz.a.run.app
+
+
+🎯 Outcome
+App Hub will now show:
+Logical grouping of frontend and backend under my-demo-app.
+Service interactions (backend calls by frontend).
+Cross-project visibility of all parts of the app.
+Metadata like labels, environment (prod/dev), and ownership.
+
+🧪 Test
+Access the frontend URL.
+Confirm it calls the backend successfully.
+Visit the App Hub UI in Cloud Console to visualize the application.
+Console Path: Cloud Console > Application Hub > Applications > my-demo-app
+
+🔐 Optional Enhancements
+Add IAM conditions to restrict service registration.
+Use service accounts and VPC connectivity for secure interaction.
+Add monitoring/alerts to observe inter-service latency.
+
+###################
+
+
+DP:
+
+# GCP App Hub POC: Demonstrating Application-Centric Resource Organization
+
+## Overview
+This POC will demonstrate how App Hub can help organize resources across two GCP projects to provide an application-centric view. We'll create a simple web application with frontend and backend components distributed across two projects, then use App Hub to visualize their relationships.
+
+## Scenario Setup
+
+### Project Structure
+- **Project A (frontend-project)**: Hosts the frontend components
+  - Cloud Run service for web UI
+  - Cloud Storage for static assets
+- **Project B (backend-project)**: Hosts backend services
+  - Cloud SQL database
+  - Cloud Functions for APIs
+
+## Implementation Steps
+
+### 1. Enable Required APIs
+First, enable the necessary APIs in both projects:
+
+```bash
+# In both projects
+gcloud services enable apphub.googleapis.com
+gcloud services enable serviceusage.googleapis.com
+```
+
+### 2. Create Resources
+
+#### In Project A (frontend-project):
+```bash
+gcloud config set project frontend-project
+
+# Create Cloud Run service
+gcloud run deploy web-ui --image=gcr.io/cloudrun/hello --region=us-central1 --allow-unauthenticated
+
+# Create Cloud Storage bucket
+gsutil mb gs://frontend-project-static-assets
+```
+
+#### In Project B (backend-project):
+```bash
+gcloud config set project backend-project
+
+# Create Cloud SQL instance
+gcloud sql instances create backend-db \
+    --database-version=POSTGRES_13 \
+    --tier=db-f1-micro \
+    --region=us-central1
+
+# Create Cloud Function
+gcloud functions deploy api-service \
+    --runtime=nodejs16 \
+    --trigger-http \
+    --region=us-central1 \
+    --entry-point=helloWorld
+```
+
+### 3. Set Up App Hub
+
+#### Create App Hub service in both projects:
+```bash
+# In each project
+gcloud app hub services create \
+    --display-name="My Application Service" \
+    --service-reference=projects/[PROJECT_ID]/locations/us-central1/services/[SERVICE_ID]
+```
+
+#### In Project A (will be our primary project for the POC):
+```bash
+gcloud config set project frontend-project
+
+# Create an App Hub
+gcloud app hub applications create my-application \
+    --display-name="My Web Application" \
+    --scope-type=REGIONAL \
+    --scope=us-central1
+
+# Register the frontend services
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/frontend-project/locations/us-central1/services/web-ui
+
+# Register the backend services from Project B
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/backend-project/locations/us-central1/services/backend-db
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/backend-project/locations/us-central1/services/api-service
+```
+
+### 4. Define Workloads and Dependencies
+
+```bash
+# Create frontend workload
+gcloud app hub workloads create frontend \
+    --application=my-application \
+    --display-name="Web Frontend" \
+    --service-projects=frontend-project \
+    --services=projects/frontend-project/locations/us-central1/services/web-ui
+
+# Create backend workload
+gcloud app hub workloads create backend \
+    --application=my-application \
+    --display-name="API Backend" \
+    --service-projects=backend-project \
+    --services=projects/backend-project/locations/us-central1/services/api-service,projects/backend-project/locations/us-central1/services/backend-db
+
+# Define dependencies
+gcloud app hub workloads update frontend \
+    --application=my-application \
+    --depends-on-workloads=backend
+```
+
+## Verification
+
+### View the Application in Console
+1. Go to the [App Hub console](https://console.cloud.google.com/apphub)
+2. Select your project and region (us-central1)
+3. View "My Web Application" and its components
+
+### Check via CLI
+```bash
+gcloud app hub applications describe my-application --location=us-central1
+
+gcloud app hub workloads list --application=my-application --location=us-central1
+```
+
+## Expected Benefits Demonstrated
+
+1. **Unified View**: See all components of the application across two projects in one place
+2. **Dependency Mapping**: Visualize how the frontend depends on the backend services
+3. **Resource Tracking**: Easily identify all GCP services that make up your application
+4. **Cross-Project Visibility**: Understand relationships between resources in different projects
+
+## Cleanup
+
+```bash
+# Delete App Hub resources
+gcloud app hub workloads delete frontend --application=my-application --location=us-central1
+gcloud app hub workloads delete backend --application=my-application --location=us-central1
+gcloud app hub applications delete my-application --location=us-central1
+
+# Delete the created resources in both projects
+# (Cloud Run, Cloud SQL, Cloud Functions, Storage buckets)
+```
+
+This POC demonstrates how App Hub provides an application-centric view across multiple projects, helping teams understand how their distributed components interact as part of a complete application.
+
+
+###################
+To demonstrate a Proof of Concept (PoC) for Google Cloud Platform's (GCP) **App Hub** in a two-project scenario, we’ll focus on how App Hub can provide an **application-centric view** to organize and understand resource interactions across two projects. App Hub is designed to catalog and manage services and workloads, offering visibility into dependencies and relationships across Google Cloud resources like Compute Engine, Google Kubernetes Engine (GKE), Cloud Functions, and App Engine, among others. Below, I’ll outline a practical example using `gcloud` commands to set up and demonstrate App Hub’s capabilities in a two-project scenario.
+
+### Objective
+Show how App Hub can organize resources (e.g., a GKE cluster in one project and a Cloud Function in another) under a single application view, highlighting their interactions (e.g., the Cloud Function invoking an endpoint in the GKE cluster). This PoC will simulate a simple web application where a Cloud Function triggers a workload running on a GKE cluster, and App Hub provides a unified view of these resources.
+
+### Prerequisites
+1. **Google Cloud Account**: Ensure you have a GCP account with billing enabled.
+2. **gcloud CLI**: Installed and initialized (`gcloud init`) on your local machine or Cloud Shell.[](https://cloud.google.com/sdk/gcloud)
+3. **Permissions**: You need `Owner` or `Editor` roles on both projects, plus `App Hub Admin` (`roles/apphub.admin`) for managing App Hub resources.
+4. **Two Projects**: We’ll create two projects, `project-a` (hosting a GKE cluster) and `project-b` (hosting a Cloud Function).
+
+### Step-by-Step PoC
+#### Step 1: Set Up Two Projects
+Create two projects to simulate a multi-project environment.
+
+1. **Create Project A** (for GKE cluster):
+   ```bash
+   gcloud projects create project-a-$RANDOM --name="Project A" --labels=env=app-hub-poc
+   ```
+   Replace `$RANDOM` with a unique number or omit it if you want to set a specific ID. Note the `PROJECT_A_ID` from the output.[](https://cloud.google.com/resource-manager/docs/creating-managing-projects)
+
+2. **Create Project B** (for Cloud Function):
+   ```bash
+   gcloud projects create project-b-$RANDOM --name="Project B" --labels=env=app-hub-poc
+   ```
+   Note the `PROJECT_B_ID` from the output.
+
+3. **Enable Billing** (required for both projects):
+   - Go to the Google Cloud Console, navigate to **Billing**, and link both projects to a billing account. Alternatively, use:
+     ```bash
+     gcloud beta billing projects link $PROJECT_A_ID --billing-account $BILLING_ACCOUNT_ID
+     gcloud beta billing projects link $PROJECT_B_ID --billing-account $BILLING_ACCOUNT_ID
+     ```
+     Replace `$BILLING_ACCOUNT_ID` with your billing account ID (find it with `gcloud beta billing accounts list`).[](https://gist.github.com/pydevops/cffbd3c694d599c6ca18342d3625af97)
+
+4. **Enable Required APIs**:
+   For both projects, enable APIs for App Hub, GKE, and Cloud Functions:
+   ```bash
+   gcloud services enable apphub.googleapis.com container.googleapis.com cloudfunctions.googleapis.com compute.googleapis.com --project $PROJECT_A_ID
+   gcloud services enable apphub.googleapis.com cloudfunctions.googleapis.com --project $PROJECT_B_ID
+   ```
+
+#### Step 2: Deploy Resources
+##### Project A: Deploy a GKE Cluster
+1. **Set Project A as Active**:
+   ```bash
+   gcloud config set project $PROJECT_A_ID
+   ```
+
+2. **Create a GKE Cluster**:
+   ```bash
+   gcloud container clusters create hello-cluster \
+     --location us-central1 \
+     --num-nodes 1 \
+     --machine-type e2-medium
+   ```
+   This creates a small GKE cluster in the `us-central1` region.[](https://cloud.google.com/kubernetes-engine/docs/deploy-app-cluster)
+
+3. **Deploy a Sample Application**:
+   Deploy a simple web server (`hello-app`) to the GKE cluster:
+   ```bash
+   gcloud container clusters get-credentials hello-cluster --location us-central1
+   kubectl create deployment hello-server --image=us-docker.pkg.dev/google-samples/containers/gke/hello-app:1.0
+   kubectl expose deployment hello-server --type=LoadBalancer --port 80 --target-port 8080
+   ```
+   The `expose` command creates a Service with an external IP. Retrieve it with:
+   ```bash
+   kubectl get service hello-server
+   ```
+   Note the `EXTERNAL-IP` for the Cloud Function to call later.
+
+##### Project B: Deploy a Cloud Function
+1. **Set Project B as Active**:
+   ```bash
+   gcloud config set project $PROJECT_B_ID
+   ```
+
+2. **Create a Cloud Function**:
+   Create a simple Cloud Function that makes an HTTP request to the GKE service in Project A. Save the following code as `index.js`:
+   ```javascript
+   const axios = require('axios');
+   exports.callGkeService = async (req, res) => {
+     try {
+       const response = await axios.get('http://<EXTERNAL-IP>');
+       res.status(200).send(`Response from GKE: ${response.data}`);
+     } catch (error) {
+       res.status(500).send(`Error: ${error.message}`);
+     }
+   };
+   ```
+   Replace `<EXTERNAL-IP>` with the `EXTERNAL-IP` from the GKE service.
+
+   Create a `package.json`:
+   ```json
+   {
+     "dependencies": {
+       "axios": "^1.7.2"
+     }
+   }
+   ```
+
+3. **Deploy the Cloud Function**:
+   ```bash
+   gcloud functions deploy call-gke-service \
+     --runtime nodejs20 \
+     --trigger-http \
+     --allow-unauthenticated \
+     --region us-central1
+   ```
+   Note the function’s URL (e.g., `https://us-central1-$PROJECT_B_ID.cloudfunctions.net/call-gke-service`) for testing.
+
+4. **Test the Interaction**:
+   Use `curl` or a browser to hit the Cloud Function URL. It should call the GKE service and return its response, demonstrating cross-project interaction.
+
+#### Step 3: Set Up App Hub
+1. **Enable App Hub in Both Projects**:
+   Already done in Step 1 via `apphub.googleapis.com`.
+
+2. **Create an Application in App Hub**:
+   App Hub organizes resources as part of an “Application.” Create one in Project A:
+   ```bash
+   gcloud apphub applications create my-app \
+     --project $PROJECT_A_ID \
+     --display-name "My PoC App" \
+     --description "PoC to demonstrate App Hub cross-project organization"
+   ```
+   Note the `APPLICATION_ID` from the output.
+
+3. **Register the GKE Cluster as a Workload**:
+   Register the GKE cluster in Project A as a workload in the application:
+   ```bash
+   gcloud apphub workloads create my-gke-workload \
+     --project $PROJECT_A_ID \
+     --application my-app \
+     --display-name "GKE Hello Cluster" \
+     --workload-reference //container.googleapis.com/projects/$PROJECT_A_ID/locations/us-central1/clusters/hello-cluster
+   ```
+
+4. **Register the Cloud Function as a Service**:
+   In Project B, register the Cloud Function as a service in the same application (note: App Hub supports cross-project resource registration):
+   ```bash
+   gcloud apphub services create my-function-service \
+     --project $PROJECT_B_ID \
+     --application projects/$PROJECT_A_ID/locations/global/applications/my-app \
+     --display-name "Cloud Function Service" \
+     --service-reference //cloudfunctions.googleapis.com/projects/$PROJECT_B_ID/locations/us-central1/functions/call-gke-service
+   ```
+
+#### Step 4: Visualize and Verify in App Hub
+1. **View the Application**:
+   In the Google Cloud Console, navigate to **App Hub** > **Applications** in Project A. Select `my-app` to see the GKE cluster (workload) and Cloud Function (service) listed together, despite being in different projects.
+
+2. **Check Resource Interactions**:
+   App Hub provides a topology view showing that the Cloud Function in Project B interacts with the GKE cluster in Project A (via the HTTP call). This demonstrates App Hub’s ability to provide an application-centric view of cross-project dependencies.
+
+3. **List Resources via gcloud**:
+   Confirm the registered resources:
+   ```bash
+   gcloud apphub applications list --project $PROJECT_A_ID
+   gcloud apphub workloads list --project $PROJECT_A_ID
+   gcloud apphub services list --project $PROJECT_B_ID
+   ```
+
+#### Step 5: Clean Up
+To avoid charges, delete the resources:
+1. **Delete the Cloud Function**:
+   ```bash
+   gcloud functions delete call-gke-service --project $PROJECT_B_ID --region us-central1 --quiet
+   ```
+
+2. **Delete the GKE Cluster**:
+   ```bash
+   gcloud container clusters delete hello-cluster --project $PROJECT_A_ID --location us-central1 --quiet
+   ```
+
+3. **Delete App Hub Resources**:
+   ```bash
+   gcloud apphub services delete my-function-service --project $PROJECT_B_ID
+   gcloud apphub workloads delete my-gke-workload --project $PROJECT_A_ID
+   gcloud apphub applications delete my-app --project $PROJECT_A_ID
+   ```
+
+4. **Delete Projects**:
+   ```bash
+   gcloud projects delete $PROJECT_A_ID --quiet
+   gcloud projects delete $PROJECT_B_ID --quiet
+   ```
+   Note: Projects enter a 30-day deletion period and can be restored if needed.[](https://support.google.com/googleapi/answer/6251787?hl=en)
+
+### Outcome
+This PoC demonstrates:
+- **Application-Centric Organization**: App Hub groups the GKE cluster (Project A) and Cloud Function (Project B) under one application (`my-app`), providing a unified view.
+- **Resource Interactions**: The Cloud Function’s HTTP call to the GKE service illustrates a dependency, which App Hub visualizes in its topology view.
+- **Cross-Project Visibility**: App Hub allows resources from multiple projects to be managed together, simplifying dependency tracking.
+
+### Notes
+- **Permissions**: Ensure the service account used by the Cloud Function has network access to the GKE cluster’s external IP. If the GKE service is internal, use VPC peering or Shared VPC.[](https://cloud.google.com/docs/overview)
+- **App Hub Limitations**: As of June 2025, App Hub supports specific resources (e.g., GKE, Cloud Functions, Compute Engine). Check supported resources in the App Hub documentation.[](https://cloud.google.com/kubernetes-engine/docs/deploy-app-cluster)
+- **Scalability**: For a more complex PoC, add more services (e.g., Cloud Storage, Pub/Sub) and register them in App Hub to show broader interactions.
+
+This setup provides a practical example of how App Hub organizes resources across projects, making it easier to understand and manage application dependencies in GCP. Let me know if you need further customization or additional details![](https://cloud.google.com/kubernetes-engine/docs/deploy-app-cluster)
+
+
+
+###################
+
+App Hub is a relatively new feature in Google Cloud that helps you organize your resources around applications. Here's a step-by-step guide to creating a Proof of Concept (POC) for App Hub in a two-project scenario using `gcloud` commands.
+
+**Prerequisites:**
+
+1. You have a Google Cloud account with two projects: `project-1` and `project-2`.
+2. You have the necessary permissions to create resources and enable APIs in both projects.
+3. You have the `gcloud` CLI installed and configured on your machine.
+
+**Step 1: Set up the environment**
+
+Set the project IDs as environment variables:
+```bash
+export PROJECT1_ID=<project-1-id>
+export PROJECT2_ID=<project-2-id>
+export REGION=<your-region>
+```
+**Step 2: Create resources in both projects**
+
+Create a sample application with resources in both projects. Let's say we're creating a simple e-commerce application with a frontend service in `project-1` and a backend service in `project-2`.
+
+In `project-1`, create a GKE cluster and deploy a frontend service:
+```bash
+gcloud config set project $PROJECT1_ID
+gcloud services enable container.googleapis.com
+gcloud container clusters create ecommerce-cluster --region $REGION
+gcloud container clusters get-credentials ecommerce-cluster --region $REGION
+kubectl create deployment frontend --image=gcr.io/google-samples/hello-app:1.0
+kubectl expose deployment frontend --type=LoadBalancer --port=80
+```
+In `project-2`, create a Cloud SQL instance and a backend service:
+```bash
+gcloud config set project $PROJECT2_ID
+gcloud services enable sqladmin.googleapis.com
+gcloud sql instances create ecommerce-db --region $REGION
+gcloud sql databases create ecommerce-db --instance=ecommerce-db
+gcloud compute instances create backend-vm --zone ${REGION}-a --machine-type=f1-micro
+gcloud compute instances add-metadata backend-vm --metadata startup-script='#! /bin/bash; sudo apt-get update; sudo apt-get install -y nginx; sudo service nginx start'
+```
+**Step 3: Register services with App Hub**
+
+Enable the App Hub API in both projects:
+```bash
+gcloud config set project $PROJECT1_ID
+gcloud services enable apphub.googleapis.com
+
+gcloud config set project $PROJECT2_ID
+gcloud services enable apphub.googleapis.com
+```
+Create an App Hub application in `project-1`:
+```bash
+gcloud config set project $PROJECT1_ID
+gcloud apphub applications create ecommerce-app --scope=REGIONAL --region=$REGION
+```
+Register the frontend service with App Hub:
+```bash
+gcloud apphub services create frontend-service --application=ecommerce-app --scope=REGIONAL --region=$REGION --service-identifier=//container.googleapis.com/projects/$PROJECT1_ID/locations/$REGION/clusters/ecommerce-cluster/services/frontend
+```
+Register the backend service with App Hub (from `project-2`):
+```bash
+gcloud config set project $PROJECT2_ID
+gcloud apphub services create backend-service --application=ecommerce-app --scope=REGIONAL --region=$REGION --service-identifier=//compute.googleapis.com/projects/$PROJECT2_ID/zones/${REGION}-a/instances/backend-vm
+```
+**Step 4: Attach resources to the App Hub application**
+
+Attach the Cloud SQL instance to the App Hub application:
+```bash
+gcloud config set project $PROJECT2_ID
+gcloud apphub resources create ecommerce-db-resource --application=ecommerce-app --scope=REGIONAL --region=$REGION --resource-identifier=//sqladmin.googleapis.com/projects/$PROJECT2_ID/instances/ecommerce-db
+```
+**Step 5: Visualize the application topology**
+
+Use the App Hub UI or `gcloud` commands to visualize the application topology:
+```bash
+gcloud apphub applications describe ecommerce-app --region=$REGION
+```
+This will display the application's topology, including the registered services and resources.
+
+**Step 6: Explore resource interactions**
+
+Use the App Hub UI or `gcloud` commands to explore the resource interactions:
+```bash
+gcloud apphub services describe frontend-service --application=ecommerce-app --region=$REGION
+```
+This will display the service's details, including its dependencies and connections to other resources.
+
+Congratulations! You've successfully demonstrated the value of App Hub in a two-project scenario using `gcloud` commands. You can now explore the App Hub UI to visualize the application topology and resource interactions.
+
+**Clean up**
+
+To avoid incurring unnecessary costs, delete the resources created during this POC:
+```bash
+gcloud config set project $PROJECT1_ID
+gcloud container clusters delete ecommerce-cluster --region $REGION
+gcloud apphub applications delete ecommerce-app --region=$REGION
+
+gcloud config set project $PROJECT2_ID
+gcloud sql instances delete ecommerce-db --region $REGION
+gcloud compute instances delete backend-vm --zone ${REGION}-a
+gcloud apphub services delete backend-service --application=ecommerce-app --region=$REGION
+```
+#####$$$$$$###############
+
+CL
+I'll help you create a practical POC for GCP App Hub that demonstrates application-centric resource organization across two projects. Let me search for the most current information about App Hub implementation.
+
+Searched for "GCP App Hub gcloud commands two projects setup 2024"
+
+Let me search more specifically for App Hub information:
+
+Searched for "Google Cloud App Hub application discovery resource organization 2024"
+
+Based on my knowledge and the search results, I'll create a comprehensive POC for GCP App Hub that demonstrates application-centric resource organization across two projects. App Hub helps organize infrastructure resources by creating App Hub applications that include these resources as App Hub services and workloads, helping answer questions about application dependencies and ownership across projects. [Google Cloud](https://cloud.google.com/app-hub/docs/overview
+
+# GCP App Hub POC: Two-Project Application-Centric Resource Organization
+
+## Overview
+This POC demonstrates how App Hub provides an application-centric view to organize and understand resource interactions across multiple GCP projects. We'll create a realistic e-commerce application scenario with frontend and backend components distributed across two projects.
+
+## Scenario Architecture
+- **Project 1 (frontend-ecommerce-poc)**: Web frontend, CDN, Load Balancer
+- **Project 2 (backend-ecommerce-poc)**: API services, Database, Storage
+- **App Hub Application**: "E-commerce Platform" spanning both projects
+
+## Prerequisites
+```bash
+# Ensure you have the necessary permissions
+# - Project Creator role (or existing projects)
+# - App Hub Admin role
+# - Service Usage Admin role
+
+# Install/Update gcloud CLI
+gcloud components update
+gcloud components install app-hub-util alpha beta
+```
+
+## Step 1: Project Setup
+
+### Create and Configure Projects
+```bash
+# Set variables
+export FRONTEND_PROJECT_ID="frontend-ecommerce-poc"
+export BACKEND_PROJECT_ID="backend-ecommerce-poc"
+export BILLING_ACCOUNT_ID="YOUR_BILLING_ACCOUNT_ID"
+export REGION="us-central1"
+export ZONE="us-central1-a"
+
+# Create projects
+gcloud projects create $FRONTEND_PROJECT_ID --name="Frontend E-commerce POC"
+gcloud projects create $BACKEND_PROJECT_ID --name="Backend E-commerce POC"
+
+# Link billing accounts
+gcloud billing projects link $FRONTEND_PROJECT_ID --billing-account=$BILLING_ACCOUNT_ID
+gcloud billing projects link $BACKEND_PROJECT_ID --billing-account=$BILLING_ACCOUNT_ID
+
+# Create configurations for easy switching
+gcloud config configurations create frontend-config
+gcloud config configurations create backend-config
+
+# Configure frontend project
+gcloud config configurations activate frontend-config
+gcloud config set project $FRONTEND_PROJECT_ID
+gcloud config set compute/region $REGION
+gcloud config set compute/zone $ZONE
+
+# Configure backend project  
+gcloud config configurations activate backend-config
+gcloud config set project $BACKEND_PROJECT_ID
+gcloud config set compute/region $REGION
+gcloud config set compute/zone $ZONE
+```
+
+### Enable Required APIs
+```bash
+# Enable APIs for frontend project
+gcloud config configurations activate frontend-config
+gcloud services enable apphub.googleapis.com
+gcloud services enable compute.googleapis.com
+gcloud services enable run.googleapis.com
+gcloud services enable storage.googleapis.com
+
+# Enable APIs for backend project
+gcloud config configurations activate backend-config
+gcloud services enable apphub.googleapis.com
+gcloud services enable compute.googleapis.com
+gcloud services enable run.googleapis.com
+gcloud services enable sqladmin.googleapis.com
+gcloud services enable storage.googleapis.com
+```
+
+## Step 2: Create Infrastructure Resources
+
+### Frontend Project Resources
+```bash
+gcloud config configurations activate frontend-config
+
+# Create Cloud Run service for frontend
+gcloud run deploy frontend-web \
+    --image=gcr.io/cloudrun/hello \
+    --platform=managed \
+    --region=$REGION \
+    --allow-unauthenticated \
+    --port=8080 \
+    --memory=512Mi
+
+# Create a storage bucket for static assets
+gsutil mb gs://${FRONTEND_PROJECT_ID}-static-assets
+
+# Create a load balancer (using Cloud Run as backend for simplicity)
+gcloud compute backend-services create frontend-backend-service \
+    --global \
+    --load-balancing-scheme=EXTERNAL_MANAGED
+
+# Create a URL map
+gcloud compute url-maps create frontend-url-map \
+    --default-backend-service=frontend-backend-service
+
+# Create HTTP(S) load balancer
+gcloud compute target-http-proxies create frontend-http-proxy \
+    --url-map=frontend-url-map
+
+gcloud compute forwarding-rules create frontend-forwarding-rule \
+    --global \
+    --target-http-proxy=frontend-http-proxy \
+    --ports=80
+```
+
+### Backend Project Resources
+```bash
+gcloud config configurations activate backend-config
+
+# Create Cloud Run service for API
+gcloud run deploy api-service \
+    --image=gcr.io/cloudrun/hello \
+    --platform=managed \
+    --region=$REGION \
+    --allow-unauthenticated \
+    --port=8080 \
+    --memory=1Gi \
+    --cpu=2
+
+# Create Cloud SQL instance
+gcloud sql instances create ecommerce-db \
+    --database-version=POSTGRES_13 \
+    --tier=db-f1-micro \
+    --region=$REGION \
+    --storage-type=SSD \
+    --storage-size=10GB
+
+# Create database
+gcloud sql databases create ecommerce_app --instance=ecommerce-db
+
+# Create storage bucket for product images
+gsutil mb gs://${BACKEND_PROJECT_ID}-product-images
+
+# Create a Compute Engine instance for batch processing
+gcloud compute instances create batch-processor \
+    --zone=$ZONE \
+    --machine-type=e2-micro \
+    --image-family=debian-11 \
+    --image-project=debian-cloud \
+    --boot-disk-size=10GB
+```
+
+## Step 3: Set Up App Hub Application
+
+### Create App Hub Application
+```bash
+# Switch to frontend project for App Hub setup
+gcloud config configurations activate frontend-config
+
+# Create the App Hub application
+gcloud alpha app-hub applications create ecommerce-platform \
+    --display-name="E-commerce Platform" \
+    --description="Multi-project e-commerce application demonstrating App Hub capabilities" \
+    --business-owners="platform-team@company.com" \
+    --developer-owners="dev-team@company.com" \
+    --operator-owners="ops-team@company.com"
+```
+
+### Register Services and Workloads
+
+#### Frontend Project Services
+```bash
+gcloud config configurations activate frontend-config
+
+# Register Cloud Run frontend service
+gcloud alpha app-hub services create frontend-web-service \
+    --application=ecommerce-platform \
+    --display-name="Frontend Web Service" \
+    --description="Customer-facing web interface" \
+    --business-owners="frontend-team@company.com" \
+    --developer-owners="frontend-dev@company.com"
+
+# Register Load Balancer as a service
+gcloud alpha app-hub services create frontend-lb-service \
+    --application=ecommerce-platform \
+    --display-name="Frontend Load Balancer" \
+    --description="Global load balancer for web traffic" \
+    --business-owners="platform-team@company.com" \
+    --developer-owners="infra-team@company.com"
+
+# Register Cloud Run workload
+FRONTEND_SERVICE_URI=$(gcloud run services describe frontend-web --region=$REGION --format="value(status.url)")
+
+gcloud alpha app-hub workloads create frontend-web-workload \
+    --service=frontend-web-service \
+    --display-name="Frontend Web Workload" \
+    --description="Cloud Run service hosting the web frontend" \
+    --workload-properties="environment=production,tier=frontend" \
+    --discovered-workload="projects/${FRONTEND_PROJECT_ID}/locations/${REGION}/services/frontend-web"
+
+# Register Storage bucket as workload
+gcloud alpha app-hub workloads create static-assets-workload \
+    --service=frontend-web-service \
+    --display-name="Static Assets Storage" \
+    --description="Storage bucket for static web assets" \
+    --workload-properties="environment=production,type=storage" \
+    --discovered-workload="projects/${FRONTEND_PROJECT_ID}/buckets/${FRONTEND_PROJECT_ID}-static-assets"
+```
+
+#### Backend Project Services
+```bash
+gcloud config configurations activate backend-config
+
+# Register API service (cross-project)
+gcloud alpha app-hub services create api-service \
+    --application="projects/${FRONTEND_PROJECT_ID}/locations/global/applications/ecommerce-platform" \
+    --display-name="API Service" \
+    --description="Core business logic API" \
+    --business-owners="backend-team@company.com" \
+    --developer-owners="api-team@company.com"
+
+# Register Database service
+gcloud alpha app-hub services create database-service \
+    --application="projects/${FRONTEND_PROJECT_ID}/locations/global/applications/ecommerce-platform" \
+    --display-name="Database Service" \
+    --description="PostgreSQL database for application data" \
+    --business-owners="data-team@company.com" \
+    --developer-owners="dba-team@company.com"
+
+# Register Batch Processing service
+gcloud alpha app-hub services create batch-service \
+    --application="projects/${FRONTEND_PROJECT_ID}/locations/global/applications/ecommerce-platform" \
+    --display-name="Batch Processing Service" \
+    --description="Background processing for orders and analytics" \
+    --business-owners="analytics-team@company.com" \
+    --developer-owners="batch-team@company.com"
+
+# Register API workload
+gcloud alpha app-hub workloads create api-workload \
+    --service=api-service \
+    --display-name="API Cloud Run Workload" \
+    --description="Cloud Run service hosting the API" \
+    --workload-properties="environment=production,tier=backend" \
+    --discovered-workload="projects/${BACKEND_PROJECT_ID}/locations/${REGION}/services/api-service"
+
+# Register Database workload
+gcloud alpha app-hub workloads create database-workload \
+    --service=database-service \
+    --display-name="PostgreSQL Database" \
+    --description="Cloud SQL PostgreSQL instance" \
+    --workload-properties="environment=production,type=database" \
+    --discovered-workload="projects/${BACKEND_PROJECT_ID}/instances/ecommerce-db"
+
+# Register Batch processing workload
+gcloud alpha app-hub workloads create batch-workload \
+    --service=batch-service \
+    --display-name="Batch Processor VM" \
+    --description="Compute Engine instance for batch processing" \
+    --workload-properties="environment=production,type=compute" \
+    --discovered-workload="projects/${BACKEND_PROJECT_ID}/zones/${ZONE}/instances/batch-processor"
+
+# Register Product images storage
+gcloud alpha app-hub workloads create product-images-workload \
+    --service=api-service \
+    --display-name="Product Images Storage" \
+    --description="Storage bucket for product images" \
+    --workload-properties="environment=production,type=storage" \
+    --discovered-workload="projects/${BACKEND_PROJECT_ID}/buckets/${BACKEND_PROJECT_ID}-product-images"
+```
+
+## Step 4: Define Service Dependencies
+
+```bash
+# Switch back to frontend project
+gcloud config configurations activate frontend-config
+
+# Create service relationships to show dependencies
+gcloud alpha app-hub service-project-attachments create frontend-to-api \
+    --service="projects/${FRONTEND_PROJECT_ID}/locations/global/applications/ecommerce-platform/services/frontend-web-service" \
+    --service-project="projects/${BACKEND_PROJECT_ID}/locations/global/applications/ecommerce-platform/services/api-service"
+
+gcloud alpha app-hub service-project-attachments create api-to-database \
+    --service="projects/${BACKEND_PROJECT_ID}/locations/global/applications/ecommerce-platform/services/api-service" \
+    --service-project="projects/${BACKEND_PROJECT_ID}/locations/global/applications/ecommerce-platform/services/database-service"
+```
+
+## Step 5: Explore App Hub Capabilities
+
+### View Application Overview
+```bash
+# List all applications
+gcloud alpha app-hub applications list
+
+# Get detailed application information
+gcloud alpha app-hub applications describe ecommerce-platform \
+    --format="table(name,displayName,description,createTime)"
+
+# List all services in the application
+gcloud alpha app-hub services list \
+    --application=ecommerce-platform \
+    --format="table(name,displayName,description,businessOwners.emails)"
+
+# List all workloads across services
+gcloud alpha app-hub workloads list \
+    --service=frontend-web-service \
+    --format="table(name,displayName,workloadReference.uri,workloadProperties)"
+
+gcloud alpha app-hub workloads list \
+    --service=api-service \
+    --format="table(name,displayName,workloadReference.uri,workloadProperties)"
+```
+
+### Generate Application Topology View
+```bash
+# Get application topology (shows resource relationships)
+gcloud alpha app-hub applications describe ecommerce-platform \
+    --format="export" > ecommerce-app-topology.yaml
+
+# View service dependencies
+gcloud alpha app-hub service-project-attachments list \
+    --format="table(name,serviceProject,attachmentId)"
+```
+
+### Monitor Application Health
+```bash
+# Check application status
+gcloud alpha app-hub applications describe ecommerce-platform \
+    --format="value(state.state)"
+
+# List workload states across projects
+for service in frontend-web-service api-service database-service batch-service; do
+    echo "=== Workloads for $service ==="
+    gcloud alpha app-hub workloads list --service=$service \
+        --format="table(displayName,state.state,discoveredWorkload)" 2>/dev/null || echo "Service not found in current project"
+done
+```
+
+## Step 6: Demonstrate App Hub Value
+
+### Cross-Project Visibility
+```bash
+# Generate a comprehensive report
+echo "=== E-COMMERCE PLATFORM APP HUB REPORT ===" > app-hub-report.txt
+echo "Generated on: $(date)" >> app-hub-report.txt
+echo "" >> app-hub-report.txt
+
+echo "APPLICATION OVERVIEW:" >> app-hub-report.txt
+gcloud alpha app-hub applications describe ecommerce-platform \
+    --format="value(displayName,description,businessOwners.emails,developerOwners.emails)" >> app-hub-report.txt
+echo "" >> app-hub-report.txt
+
+echo "SERVICES ACROSS PROJECTS:" >> app-hub-report.txt
+gcloud alpha app-hub services list --application=ecommerce-platform \
+    --format="table(displayName,description,businessOwners.emails)" >> app-hub-report.txt
+echo "" >> app-hub-report.txt
+
+echo "RESOURCE DISTRIBUTION:" >> app-hub-report.txt
+echo "Frontend Project ($FRONTEND_PROJECT_ID):" >> app-hub-report.txt
+echo "- Web Frontend (Cloud Run)" >> app-hub-report.txt
+echo "- Load Balancer" >> app-hub-report.txt  
+echo "- Static Assets (Storage)" >> app-hub-report.txt
+echo "" >> app-hub-report.txt
+echo "Backend Project ($BACKEND_PROJECT_ID):" >> app-hub-report.txt
+echo "- API Service (Cloud Run)" >> app-hub-report.txt
+echo "- Database (Cloud SQL)" >> app-hub-report.txt
+echo "- Batch Processor (Compute Engine)" >> app-hub-report.txt
+echo "- Product Images (Storage)" >> app-hub-report.txt
+
+cat app-hub-report.txt
+```
+
+### Resource Impact Analysis
+```bash
+# Simulate analyzing impact of changes
+echo "=== IMPACT ANALYSIS EXAMPLE ==="
+echo "If we need to update the API service, App Hub shows us:"
+echo "1. Dependent services: Frontend Web Service"
+echo "2. Dependent workloads: Frontend Web Workload"
+echo "3. Affected teams: frontend-team@company.com, api-team@company.com"
+echo "4. Cross-project implications: Changes affect both projects"
+
+# List all stakeholders
+echo ""
+echo "=== STAKEHOLDER NOTIFICATION LIST ==="
+gcloud alpha app-hub services list --application=ecommerce-platform \
+    --format="value(businessOwners.emails,developerOwners.emails)" | sort | uniq
+```
+
+## Step 7: Cleanup (Optional)
+
+```bash
+# Delete App Hub resources
+gcloud alpha app-hub applications delete ecommerce-platform --quiet
+
+# Delete GCP resources
+gcloud config configurations activate frontend-config
+gcloud run services delete frontend-web --region=$REGION --quiet
+gcloud compute forwarding-rules delete frontend-forwarding-rule --global --quiet
+gcloud compute target-http-proxies delete frontend-http-proxy --quiet
+gcloud compute url-maps delete frontend-url-map --quiet
+gcloud compute backend-services delete frontend-backend-service --global --quiet
+gsutil rm -r gs://${FRONTEND_PROJECT_ID}-static-assets
+
+gcloud config configurations activate backend-config
+gcloud run services delete api-service --region=$REGION --quiet
+gcloud sql instances delete ecommerce-db --quiet
+gcloud compute instances delete batch-processor --zone=$ZONE --quiet
+gsutil rm -r gs://${BACKEND_PROJECT_ID}-product-images
+
+# Delete projects (if desired)
+gcloud projects delete $FRONTEND_PROJECT_ID --quiet
+gcloud projects delete $BACKEND_PROJECT_ID --quiet
+
+# Delete configurations
+gcloud config configurations delete frontend-config --quiet
+gcloud config configurations delete backend-config --quiet
+```
+
+## Key Benefits Demonstrated
+
+1. **Application-Centric View**: Resources across multiple projects are logically grouped by application
+2. **Cross-Project Visibility**: Single pane of glass for distributed applications
+3. **Stakeholder Management**: Clear ownership and responsibility mapping
+4. **Impact Analysis**: Understanding of service dependencies and blast radius
+5. **Operational Efficiency**: Simplified monitoring and management of complex applications
+
+## Next Steps
+
+- Integrate with monitoring tools for application health dashboards
+- Set up automated discovery for new resources
+- Create custom dashboards in Cloud Console
+- Implement governance policies based on App Hub metadata
+- Use App Hub APIs for custom tooling and automation
+
+This POC demonstrates how App Hub transforms infrastructure-centric thinking into application-centric management, making it easier to operate complex, multi-project applications in GCP.
+
+I've created a comprehensive POC for GCP App Hub that demonstrates application-centric resource organization across two projects. This practical example uses an e-commerce platform scenario where:
+
+**Frontend Project** contains:
+- Cloud Run web service
+- Load balancer
+- Static assets storage
+
+**Backend Project** contains:
+- API service (Cloud Run)
+- PostgreSQL database (Cloud SQL)
+- Batch processing VM
+- Product images storage
+
+The POC shows how App Hub provides several key benefits:
+
+1. **Unified Application View**: Instead of managing resources project by project, you get a single application view spanning multiple projects
+
+2. **Clear Ownership**: Each service and workload has defined business owners, developers, and operators
+
+3. **Dependency Mapping**: Shows how frontend services depend on backend APIs and databases
+
+4. **Impact Analysis**: When changes are needed, you can quickly identify all affected services and stakeholders
+
+5. **Cross-Project Governance**: Centralized management of distributed application components
+
+The gcloud commands provided are practical and ready to use. You'll need to replace the billing account ID and adjust project names as needed. The POC also includes monitoring, reporting, and cleanup commands.
+
+Would you like me to elaborate on any specific aspect of the POC or help you adapt it for your particular use case?
+
+Citations:
+- [App Hub overview | Application Hub | Google Cloud](https://cloud.google.com/app-hub/docs/overview)
+
+More sources:
+- [Create a Google Cloud project | Google Workspace | Google for Developers](https://developers.google.com/workspace/guides/create-project)
+- [Google Cloud projects | Apps Script | Google for Developers](https://developers.google.com/apps-script/guides/cloud-platform-projects)
+- [Creating and managing projects | Resource Manager Documentation | Google Cloud](https://cloud.google.com/resource-manager/docs/creating-managing-projects)
+- [gcloud CLI overview | Google Cloud SDK Documentation](https://cloud.google.com/sdk/gcloud)
+- [google cloud platform - How to change the project in GCP using CLI commands - Stack Overflow](https://stackoverflow.com/questions/46770900/how-to-change-the-project-in-gcp-using-cli-commands)
+- [gcloud config set | Google Cloud SDK Documentation](https://cloud.google.com/sdk/gcloud/reference/config/set)
+- [gcp gcloud cheat sheet · GitHub](https://gist.github.com/pydevops/cffbd3c694d599c6ca18342d3625af97)
+- [google cloud platform 
