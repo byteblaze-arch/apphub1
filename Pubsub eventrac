@@ -1,0 +1,218 @@
+# Cross-Project Pub/Sub with IAM and Eventarc: Implementation Guide
+
+This guide covers setting up cross-project Pub/Sub interactions using IAM policies and Eventarc, including testing, monitoring, and fault injection.
+
+## Setup Overview
+
+We'll create:
+1. A **publisher project** (Project A) with a Pub/Sub topic
+2. A **subscriber project** (Project B) with a subscription and Eventarc trigger
+
+## 1. Initial Setup
+
+### In Publisher Project (Project A)
+
+```bash
+# Set variables
+export PUBLISHER_PROJECT="publisher-project-id"
+export TOPIC_NAME="cross-project-topic"
+
+# Create topic in publisher project
+gcloud pubsub topics create $TOPIC_NAME --project=$PUBLISHER_PROJECT
+
+# Grant Pub/Sub Publisher role to subscriber project's service account
+export SUBSCRIBER_PROJECT="subscriber-project-id"
+gcloud projects add-iam-policy-binding $PUBLISHER_PROJECT \
+    --member="serviceAccount:service-$(gcloud projects describe $SUBSCRIBER_PROJECT --format='value(projectNumber)')@gcp-sa-pubsub.iam.gserviceaccount.com" \
+    --role="roles/pubsub.publisher"
+```
+
+### In Subscriber Project (Project B)
+
+```bash
+# Set variables
+export SUBSCRIBER_PROJECT="subscriber-project-id"
+export TOPIC_NAME="cross-project-topic"
+export SUBSCRIPTION_NAME="cross-project-sub"
+export PUBLISHER_PROJECT="publisher-project-id"
+
+# Create a pull subscription in subscriber project linked to publisher's topic
+gcloud pubsub subscriptions create $SUBSCRIPTION_NAME \
+    --project=$SUBSCRIBER_PROJECT \
+    --topic-project=$PUBLISHER_PROJECT \
+    --topic=$TOPIC_NAME
+
+# Or for push subscriptions (recommended for Eventarc):
+export SERVICE_ACCOUNT="eventarc-service-account@${SUBSCRIBER_PROJECT}.iam.gserviceaccount.com"
+export DESTINATION_URL="https://your-service.run.app" # Your Cloud Run/Cloud Function endpoint
+
+gcloud pubsub subscriptions create $SUBSCRIPTION_NAME \
+    --project=$SUBSCRIBER_PROJECT \
+    --topic-project=$PUBLISHER_PROJECT \
+    --topic=$TOPIC_NAME \
+    --push-endpoint=$DESTINATION_URL \
+    --push-auth-service-account=$SERVICE_ACCOUNT
+
+# Grant Pub/Sub Subscriber role to subscriber project's service account
+gcloud projects add-iam-policy-binding $PUBLISHER_PROJECT \
+    --member="serviceAccount:service-$(gcloud projects describe $SUBSCRIBER_PROJECT --format='value(projectNumber)')@gcp-sa-pubsub.iam.gserviceaccount.com" \
+    --role="roles/pubsub.subscriber"
+```
+
+## 2. Eventarc Setup (in Subscriber Project)
+
+```bash
+# Enable required APIs
+gcloud services enable eventarc.googleapis.com --project=$SUBSCRIBER_PROJECT
+
+# Create Eventarc trigger
+export TRIGGER_NAME="pubsub-trigger"
+export REGION="us-central1"
+export SERVICE_ACCOUNT="eventarc-service-account@${SUBSCRIBER_PROJECT}.iam.gserviceaccount.com"
+
+gcloud eventarc triggers create $TRIGGER_NAME \
+    --project=$SUBSCRIBER_PROJECT \
+    --location=$REGION \
+    --destination-run-service=your-service \
+    --destination-run-region=$REGION \
+    --destination-run-path="/path" \
+    --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished" \
+    --transport-topic="projects/${PUBLISHER_PROJECT}/topics/${TOPIC_NAME}" \
+    --service-account=$SERVICE_ACCOUNT
+```
+
+## 3. Testing the Setup
+
+### Publish a Test Message (from Publisher Project)
+
+```bash
+gcloud pubsub topics publish projects/$PUBLISHER_PROJECT/topics/$TOPIC_NAME \
+    --message="Test cross-project message"
+```
+
+### Verify Message Delivery (in Subscriber Project)
+
+```bash
+# For pull subscriptions
+gcloud pubsub subscriptions pull projects/$SUBSCRIBER_PROJECT/subscriptions/$SUBSCRIPTION_NAME \
+    --auto-ack
+
+# Check Eventarc delivery logs
+gcloud logging read "resource.type=eventarc_trigger AND resource.labels.trigger=$TRIGGER_NAME" \
+    --project=$SUBSCRIBER_PROJECT --limit=5
+```
+
+## 4. Monitoring
+
+### Create Alert for Failed Deliveries
+
+```bash
+# Create notification channel first (email example)
+export CHANNEL_NAME="pubsub-alerts"
+gcloud alpha monitoring channels create \
+    --type=email \
+    --display-name="Pub/Sub Alert" \
+    --description="Notifications for Pub/Sub failures" \
+    --channel-labels=email_address=your-email@example.com \
+    --project=$SUBSCRIBER_PROJECT
+
+# Create alert policy for failed deliveries
+gcloud alpha monitoring policies create \
+    --policy-from-file=policy.json \
+    --project=$SUBSCRIBER_PROJECT
+```
+
+Example `policy.json`:
+```json
+{
+  "displayName": "Pub/Sub Failed Deliveries",
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Pub/Sub push errors",
+      "conditionThreshold": {
+        "filter": "resource.type=\"pubsub_subscription\" AND metric.type=\"pubsub.googleapis.com/subscription/push_request_count\" AND metric.labels.response_class!=\"success\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_RATE"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.1,
+        "duration": "300s",
+        "trigger": {
+          "count": 1
+        }
+      }
+    }
+  ],
+  "notificationChannels": ["projects/${SUBSCRIBER_PROJECT}/notificationChannels/${CHANNEL_ID}"]
+}
+```
+
+## 5. Fault Injection Testing
+
+### Test Permission Denied Errors
+
+```bash
+# Revoke permissions temporarily
+gcloud projects remove-iam-policy-binding $PUBLISHER_PROJECT \
+    --member="serviceAccount:service-$(gcloud projects describe $SUBSCRIBER_PROJECT --format='value(projectNumber)')@gcp-sa-pubsub.iam.gserviceaccount.com" \
+    --role="roles/pubsub.publisher"
+
+# Try publishing - should fail
+gcloud pubsub topics publish projects/$PUBLISHER_PROJECT/topics/$TOPIC_NAME \
+    --message="Test permission denied"
+
+# Restore permissions
+gcloud projects add-iam-policy-binding $PUBLISHER_PROJECT \
+    --member="serviceAccount:service-$(gcloud projects describe $SUBSCRIBER_PROJECT --format='value(projectNumber)')@gcp-sa-pubsub.iam.gserviceaccount.com" \
+    --role="roles/pubsub.publisher"
+```
+
+### Test Destination Unavailability
+
+```bash
+# Scale down the destination service to 0
+gcloud run services update your-service \
+    --project=$SUBSCRIBER_PROJECT \
+    --region=$REGION \
+    --min-instances=0 \
+    --no-traffic
+
+# Publish messages - they should go to dead-letter queue if configured
+for i in {1..10}; do
+  gcloud pubsub topics publish projects/$PUBLISHER_PROJECT/topics/$TOPIC_NAME \
+      --message="Test message $i - service down"
+done
+
+# Check undelivered messages
+gcloud pubsub subscriptions describe projects/$SUBSCRIBER_PROJECT/subscriptions/$SUBSCRIPTION_NAME \
+    --format="value(deadLetterPolicy)"
+
+# Scale service back up
+gcloud run services update your-service \
+    --project=$SUBSCRIBER_PROJECT \
+    --region=$REGION \
+    --min-instances=1
+```
+
+## 6. Cleanup
+
+```bash
+# In subscriber project
+gcloud eventarc triggers delete $TRIGGER_NAME \
+    --project=$SUBSCRIBER_PROJECT \
+    --location=$REGION
+
+gcloud pubsub subscriptions delete projects/$SUBSCRIBER_PROJECT/subscriptions/$SUBSCRIPTION_NAME
+
+# In publisher project
+gcloud pubsub topics delete projects/$PUBLISHER_PROJECT/topics/$TOPIC_NAME
+```
+
+This setup provides a robust cross-project Pub/Sub integration with proper IAM controls, Eventarc triggering, and includes methods for testing and monitoring the solution.
+
+
+################################
