@@ -1,0 +1,20 @@
+from flask import Flask, jsonify
+import requests
+import os
+
+app = Flask(__name__)
+BACKEND_URL = os.getenv("BACKEND_URL")
+
+@app.route("/")
+def call_backend():
+    try:
+        res = requests.get(f"{BACKEND_URL}/hello")
+        return jsonify({
+            "from_frontend": True,
+            "backend_response": res.json()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
