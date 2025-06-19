@@ -1,0 +1,133 @@
+To fulfill your request, here’s a step-by-step approach to add a CORS policy to an existing Apigee shared flow (example-sf), validate portal-origin calls, and ensure it doesn’t interfere with existing CORS logic across other APIs.
+
+
+---
+
+✅ 1. Add CORS Support to example-sf
+
+Shared Flow Policy Order Suggestion
+
+Let’s assume you already have the following policies:
+
+XML-Threat-Protection
+
+Regex-Protect
+
+
+Add a new CORS policy just before any routing or logic that may reject requests, and only execute this if the request comes from the Developer Portal.
+
+
+---
+
+✅ 2. CORS Policy: CORS-From-Portal
+
+Policy XML:
+
+<AssignMessage name="CORS-From-Portal">
+    <Add>
+        <Headers>
+            <Header name="Access-Control-Allow-Origin">{portal.origin}</Header>
+            <Header name="Access-Control-Allow-Methods">GET, POST, OPTIONS</Header>
+            <Header name="Access-Control-Allow-Headers">Authorization, Content-Type</Header>
+            <Header name="Access-Control-Max-Age">3600</Header>
+        </Headers>
+    </Add>
+    <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+    <AssignTo createNew="false" transport="http" type="response"/>
+</AssignMessage>
+
+Set portal.origin dynamically: In a JavaScript or AssignMessage policy, extract the Origin header and match it to portal domain:
+
+<AssignMessage name="Extract-Origin">
+    <AssignVariable>
+        <Name>portal.origin</Name>
+        <Ref>request.header.origin</Ref>
+    </AssignVariable>
+</AssignMessage>
+
+Or use JavaScript:
+
+// JS: SetPortalOrigin.js
+if (context.getVariable("request.header.origin") === "https://example.dev.apigee.com") {
+    context.setVariable("portal.origin", "https://example.dev.apigee.com");
+}
+
+
+---
+
+✅ 3. Optional: Preflight OPTIONS Handler
+
+To handle preflight OPTIONS requests even when target is not reached:
+
+<Flow name="Preflight">
+    <Condition>(request.verb = "OPTIONS") and (request.header.origin = "https://example.dev.apigee.com")</Condition>
+    <Request>
+        <Step>
+            <Name>Extract-Origin</Name>
+        </Step>
+        <Step>
+            <Name>CORS-From-Portal</Name>
+        </Step>
+    </Request>
+    <Response>
+        <Step>
+            <Name>CORS-From-Portal</Name>
+        </Step>
+    </Response>
+</Flow>
+
+
+---
+
+✅ 4. Integrate into example-sf Shared Flow
+
+Update the shared flow to include the CORS logic:
+
+<Step>
+    <Name>Extract-Origin</Name>
+    <Condition>request.header.origin = "https://example.dev.apigee.com"</Condition>
+</Step>
+<Step>
+    <Name>CORS-From-Portal</Name>
+    <Condition>request.header.origin = "https://example.dev.apigee.com"</Condition>
+</Step>
+
+
+---
+
+✅ 5. Validation Plan
+
+✔️ Ensure calls from portal are not blocked:
+
+Test curl with origin header:
+
+
+curl -X OPTIONS https://api.example.com/some-proxy \
+  -H "Origin: https://example.dev.apigee.com" \
+  -H "Access-Control-Request-Method: GET"
+
+Confirm Access-Control-Allow-Origin is returned as https://example.dev.apigee.com.
+
+
+✔️ Ensure other APIs’ CORS policies are unaffected:
+
+The condition in the CORS policy (request.header.origin = portal domain) ensures it’s only applied for Dev Portal-originated requests.
+
+Other APIs with their own CORS logic will operate independently.
+
+
+
+---
+
+✅ Summary of What You Achieved
+
+🛡️ Enabled Dev Portal-origin CORS handling centrally in example-sf.
+
+🔐 Protected against interference with existing CORS policies in other proxies.
+
+🧪 Setup allows testability via OPTIONS or actual calls from portal.
+
+🔄 Reusability through shared flow inclusion across proxies without duplicating logic.
+
+
+Would you like me to generate this as a deployable shared flow snippet?
