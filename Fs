@@ -1,0 +1,150 @@
+# GCP App Hub POC with Firestore Instead of Cloud SQL
+
+Here's a revised POC that uses Firestore (a NoSQL document database) instead of Cloud SQL, which better aligns with organizations that don't use Cloud SQL.
+
+## Revised Scenario Setup
+
+### Project Structure
+- **Project A (frontend-project)**: Hosts the frontend components
+  - Cloud Run service for web UI
+  - Cloud Storage for static assets
+- **Project B (backend-project)**: Hosts backend services
+  - Firestore database
+  - Cloud Functions for APIs
+
+## Implementation Steps
+
+### 1. Enable Required APIs
+First, enable the necessary APIs in both projects:
+
+```bash
+# In both projects
+gcloud services enable apphub.googleapis.com
+gcloud services enable serviceusage.googleapis.com
+
+# In backend-project
+gcloud services enable firestore.googleapis.com
+```
+
+### 2. Create Resources
+
+#### In Project A (frontend-project):
+```bash
+gcloud config set project frontend-project
+
+# Create Cloud Run service
+gcloud run deploy web-ui --image=gcr.io/cloudrun/hello --region=us-central1 --allow-unauthenticated
+
+# Create Cloud Storage bucket
+gsutil mb gs://frontend-project-static-assets
+```
+
+#### In Project B (backend-project):
+```bash
+gcloud config set project backend-project
+
+# Initialize Firestore (Native mode)
+gcloud firestore databases create --region=us-central1
+
+# Create Cloud Function with Firestore access
+gcloud functions deploy api-service \
+    --runtime=nodejs16 \
+    --trigger-http \
+    --region=us-central1 \
+    --entry-point=helloWorld \
+    --set-env-vars=PROJECT_ID=backend-project
+```
+
+### 3. Set Up App Hub
+
+#### In Project A (primary project for the POC):
+```bash
+gcloud config set project frontend-project
+
+# Create an App Hub application
+gcloud app hub applications create my-application \
+    --display-name="My Web Application" \
+    --scope-type=REGIONAL \
+    --scope=us-central1
+
+# Register the frontend services
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/frontend-project/locations/us-central1/services/web-ui
+
+# Register the backend services from Project B
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/backend-project/locations/us-central1/services/api-service
+gcloud app hub services add \
+    --application=my-application \
+    --service-reference=projects/backend-project/locations/global/services/datastore.googleapis.com
+```
+
+### 4. Define Workloads and Dependencies
+
+```bash
+# Create frontend workload
+gcloud app hub workloads create frontend \
+    --application=my-application \
+    --display-name="Web Frontend" \
+    --service-projects=frontend-project \
+    --services=projects/frontend-project/locations/us-central1/services/web-ui
+
+# Create backend workload
+gcloud app hub workloads create backend \
+    --application=my-application \
+    --display-name="API Backend" \
+    --service-projects=backend-project \
+    --services=projects/backend-project/locations/us-central1/services/api-service,projects/backend-project/locations/global/services/datastore.googleapis.com
+
+# Define dependencies
+gcloud app hub workloads update frontend \
+    --application=my-application \
+    --depends-on-workloads=backend
+```
+
+## Verification
+
+### View the Application in Console
+1. Go to the [App Hub console](https://console.cloud.google.com/apphub)
+2. Select your project and region (us-central1)
+3. View "My Web Application" and its components
+
+### Check via CLI
+```bash
+gcloud app hub applications describe my-application --location=us-central1
+
+gcloud app hub workloads list --application=my-application --location=us-central1
+```
+
+## Key Changes from Original POC
+
+1. **Replaced Cloud SQL with Firestore**:
+   - No need for IP configuration
+   - Simpler setup with automatic scaling
+   - Native integration with Cloud Functions
+
+2. **Updated Service References**:
+   - Firestore is registered as a global service (`datastore.googleapis.com`)
+   - Removed database-specific configuration requirements
+
+3. **Simplified Backend**:
+   - Cloud Function now connects directly to Firestore
+   - No networking configuration required
+
+## Cleanup Instructions
+
+```bash
+# Delete App Hub resources
+gcloud app hub workloads delete frontend --application=my-application --location=us-central1
+gcloud app hub workloads delete backend --application=my-application --location=us-central1
+gcloud app hub applications delete my-application --location=us-central1
+
+# Delete Firestore database (warning: this will delete all data)
+gcloud firestore databases delete --region=us-central1 --quiet
+
+# Delete other resources in both projects
+```
+
+This revised POC demonstrates the same application-centric view across projects while using services more commonly available in organizations that restrict Cloud SQL usage. The Firestore integration provides a more serverless approach to data storage.
