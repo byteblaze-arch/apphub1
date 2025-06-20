@@ -1592,3 +1592,158 @@ spec:
 - Use Cloud Monitoring and Error Reporting for advanced observability.
 
 Let me know if you need further assistance!
+
+
+
+
+
+Great questions! Let’s address them one by one:
+
+---
+
+### **1. What should I give for `your-cloud-run-service`?**
+The `your-cloud-run-service` value represents a **Cloud Run service** that will serve as the destination for Eventarc-triggered events (in this case, Pub/Sub messages). This service will process Pub/Sub messages after they are published.
+
+Here’s what you need to do:
+
+#### **Create a Cloud Run service**
+1. Enable the **Cloud Run API** in your **Subscriber Project**:
+   ```bash
+   gcloud services enable run.googleapis.com --project=SUBSCRIBER_PROJECT_ID
+   ```
+
+2. Deploy a simple Cloud Run service. For example, you can create a basic HTTP service in Python to log the Pub/Sub message:
+
+   - Create a file called `main.py`:
+     ```python
+     from flask import Flask, request
+     import json
+
+     app = Flask(__name__)
+
+     @app.route("/", methods=["POST"])
+     def handle_event():
+         envelope = request.get_json()
+         if not envelope:
+             return "Bad Request: no Pub/Sub message received", 400
+         
+         # Decode Pub/Sub message
+         pubsub_message = envelope.get("message", {})
+         data = pubsub_message.get("data", "")
+         if data:
+             data = json.loads(data)
+         
+         print(f"Received message: {data}")
+         return "OK", 200
+
+     if __name__ == "__main__":
+         app.run(host="0.0.0.0", port=8080)
+     ```
+
+   - Create a `requirements.txt` file:
+     ```
+     Flask==2.0.3
+     ```
+
+   - Deploy the service to Cloud Run:
+     ```bash
+     gcloud run deploy your-cloud-run-service \
+       --source . \
+       --region us-central1 \
+       --allow-unauthenticated \
+       --project=SUBSCRIBER_PROJECT_ID
+     ```
+
+   Replace `your-cloud-run-service` with the name of the service you deploy (e.g., `pubsub-handler`).
+
+**Why do you need Cloud Run?**
+Cloud Run acts as the endpoint that Eventarc sends events to. When a Pub/Sub message is published, Eventarc forwards it to this service.
+
+---
+
+### **2. What is the use of the YAML files?**
+You're correct that the YAML files (e.g., `publisher-role.yaml`, `subscriber-role.yaml`, and `eventarc-trigger.yaml`) are not directly used in the `setup.sh` script, but they are provided so you can **manually define and apply configurations**. Let me explain their purpose:
+
+#### **a. `publisher-role.yaml` and `subscriber-role.yaml`**
+These YAML files define **custom roles** for Pub/Sub permissions. Custom roles are not mandatory, but they allow you to enforce least-privilege access.
+
+If you want to use these roles instead of assigning predefined roles like `roles/pubsub.publisher` or `roles/pubsub.subscriber`, you can create them with the following commands:
+
+1. Create the **Publisher Role**:
+   ```bash
+   gcloud iam roles create PubSubPublisherRole \
+     --project=PUBLISHER_PROJECT_ID \
+     --file=pubsub/publisher-role.yaml
+   ```
+
+2. Create the **Subscriber Role**:
+   ```bash
+   gcloud iam roles create PubSubSubscriberRole \
+     --project=SUBSCRIBER_PROJECT_ID \
+     --file=pubsub/subscriber-role.yaml
+   ```
+
+3. Assign the custom roles instead of the predefined roles:
+   ```bash
+   gcloud projects add-iam-policy-binding PUBLISHER_PROJECT_ID \
+     --member="serviceAccount:SUBSCRIBER_PROJECT_ID@appspot.gserviceaccount.com" \
+     --role="projects/PUBLISHER_PROJECT_ID/roles/PubSubPublisherRole"
+
+   gcloud projects add-iam-policy-binding SUBSCRIBER_PROJECT_ID \
+     --member="serviceAccount:PUBLISHER_PROJECT_ID@appspot.gserviceaccount.com" \
+     --role="projects/SUBSCRIBER_PROJECT_ID/roles/PubSubSubscriberRole"
+   ```
+
+---
+
+#### **b. `eventarc-trigger.yaml`**
+The `eventarc-trigger.yaml` is an alternative way to configure the Eventarc trigger using a declarative approach (Infrastructure as Code). While the `setup.sh` script uses `gcloud` commands to create the Eventarc trigger, you can also apply this YAML file using the following command:
+
+```bash
+gcloud apply -f eventarc/eventarc-trigger.yaml
+```
+
+This is useful if you prefer managing resources via configuration files instead of CLI commands. You can also version-control these YAML files for better collaboration and reproducibility.
+
+---
+
+### **Why aren’t they used in the script?**
+The script uses `gcloud` commands for simplicity and assumes you’re setting up the resources interactively. YAML files are included for scenarios where you want:
+- A declarative approach (e.g., using IaC or GitOps).
+- Better version control for roles and Eventarc configurations.
+
+If you prefer YAML-based setups, you can replace the `gcloud` commands in the script with respective `kubectl apply` or `gcloud apply` commands to use these YAML files.
+
+---
+
+### **Updated Steps**
+If using YAML files, your workflow becomes:
+
+1. **Apply Pub/Sub roles**:
+   ```bash
+   gcloud iam roles create PubSubPublisherRole \
+     --project=PUBLISHER_PROJECT_ID \
+     --file=pubsub/publisher-role.yaml
+   gcloud iam roles create PubSubSubscriberRole \
+     --project=SUBSCRIBER_PROJECT_ID \
+     --file=pubsub/subscriber-role.yaml
+   ```
+
+2. **Apply Eventarc trigger**:
+   ```bash
+   gcloud apply -f eventarc/eventarc-trigger.yaml
+   ```
+
+3. **Deploy Cloud Run Service** (as described in step 1).
+
+---
+
+### Recap
+1. **Cloud Run Service**:
+   - Deploy a Cloud Run service (e.g., `pubsub-handler`) to receive Pub/Sub messages via Eventarc.
+
+2. **YAML Files**:
+   - Use YAML files for defining custom roles and the Eventarc trigger if you prefer a declarative approach.
+   - Alternatively, stick to CLI commands in the script for simplicity.
+
+Let me know if you need additional clarification!
