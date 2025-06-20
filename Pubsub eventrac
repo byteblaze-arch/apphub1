@@ -1335,3 +1335,260 @@ Since I cannot create a GitHub repository directly, you can follow these steps t
 
 You can now clone the repository and use the scripts as described in the `README.md`. The scripts include all necessary `gcloud` commands for setup, testing, monitoring, and fault injection, tailored for cross-project Pub/Sub interactions with Eventarc and IAM policies.[](https://cloud.google.com/eventarc/docs/cross-project-triggers)
 
+################################################################################
+I can't directly create a GitHub repository for you, but I can provide you with the necessary code and instructions to set up and accomplish your task. Below is a complete example of how to use **Google Cloud Pub/Sub**, **IAM policies**, and **Eventarc** for cross-project interactions, along with testing, monitoring, and fault injection.
+
+You can copy this structure into a GitHub repository.
+
+---
+
+## **Directory Structure**
+
+```
+cross-project-pubsub/
+├── README.md
+├── scripts/
+│   ├── setup.sh
+│   ├── test_pubsub.sh
+│   ├── monitor.sh
+│   └── inject_fault.sh
+├── pubsub/
+│   ├── publisher-role.yaml
+│   └── subscriber-role.yaml
+└── eventarc/
+    └── eventarc-trigger.yaml
+```
+
+---
+
+## **1. README.md**
+
+```markdown
+# Cross-Project Pub/Sub with Eventarc and IAM Policies
+
+This repository demonstrates how to set up cross-project communication in Google Cloud using Pub/Sub, IAM policies, and Eventarc.
+
+## Prerequisites
+
+1. Two Google Cloud projects:
+   - Publisher Project: `PUBLISHER_PROJECT_ID`
+   - Subscriber Project: `SUBSCRIBER_PROJECT_ID`
+2. Google Cloud SDK installed.
+3. Sufficient permissions to manage IAM, Pub/Sub, and Eventarc in both projects.
+
+## Setup
+
+Run the setup script to configure the environment:
+
+```bash
+./scripts/setup.sh
+```
+
+## Testing
+
+Send a message using Pub/Sub and verify the setup:
+
+```bash
+./scripts/test_pubsub.sh
+```
+
+## Monitoring
+
+Monitor Eventarc logs via the monitoring script:
+
+```bash
+./scripts/monitor.sh
+```
+
+## Fault Injection
+
+Introduce faults to test error handling:
+
+```bash
+./scripts/inject_fault.sh
+```
+```
+
+---
+
+## **2. scripts/setup.sh**
+
+```bash
+#!/bin/bash
+
+set -e
+
+# Define variables
+PUBLISHER_PROJECT_ID="your-publisher-project-id"
+SUBSCRIBER_PROJECT_ID="your-subscriber-project-id"
+TOPIC_NAME="cross-project-topic"
+SUBSCRIPTION_NAME="cross-project-subscription"
+EVENTARC_TRIGGER_NAME="pubsub-trigger"
+REGION="us-central1"
+
+# Enable required APIs in both projects
+gcloud services enable pubsub.googleapis.com eventarc.googleapis.com cloudresourcemanager.googleapis.com --project=$PUBLISHER_PROJECT_ID
+gcloud services enable pubsub.googleapis.com eventarc.googleapis.com cloudresourcemanager.googleapis.com --project=$SUBSCRIBER_PROJECT_ID
+
+# Step 1: Create Pub/Sub Topic in Publisher Project
+gcloud pubsub topics create $TOPIC_NAME --project=$PUBLISHER_PROJECT_ID
+
+# Step 2: Set up IAM permissions for Subscriber Project
+gcloud projects add-iam-policy-binding $PUBLISHER_PROJECT_ID \
+  --member="serviceAccount:$SUBSCRIBER_PROJECT_ID@appspot.gserviceaccount.com" \
+  --role="roles/pubsub.publisher"
+
+gcloud projects add-iam-policy-binding $SUBSCRIBER_PROJECT_ID \
+  --member="serviceAccount:$PUBLISHER_PROJECT_ID@appspot.gserviceaccount.com" \
+  --role="roles/pubsub.subscriber"
+
+# Step 3: Create a Subscription in Subscriber Project
+gcloud pubsub subscriptions create $SUBSCRIPTION_NAME \
+  --topic=$TOPIC_NAME \
+  --project=$SUBSCRIBER_PROJECT_ID
+
+# Step 4: Deploy Eventarc Trigger
+gcloud eventarc triggers create $EVENTARC_TRIGGER_NAME \
+  --destination-run-service="your-cloud-run-service" \
+  --destination-run-region=$REGION \
+  --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished" \
+  --service-account=$SUBSCRIBER_PROJECT_ID@appspot.gserviceaccount.com \
+  --project=$SUBSCRIBER_PROJECT_ID
+
+echo "Setup complete."
+```
+
+---
+
+## **3. scripts/test_pubsub.sh**
+
+```bash
+#!/bin/bash
+
+set -e
+
+# Variables
+PUBLISHER_PROJECT_ID="your-publisher-project-id"
+TOPIC_NAME="cross-project-topic"
+
+# Publish a test message
+gcloud pubsub topics publish $TOPIC_NAME \
+  --message="Test message from Publisher Project" \
+  --project=$PUBLISHER_PROJECT_ID
+
+echo "Message published. Check the Subscriber Project for delivery."
+```
+
+---
+
+## **4. scripts/monitor.sh**
+
+```bash
+#!/bin/bash
+
+set -e
+
+# Variables
+SUBSCRIBER_PROJECT_ID="your-subscriber-project-id"
+EVENTARC_TRIGGER_NAME="pubsub-trigger"
+
+# Monitor Eventarc logs
+echo "Fetching logs for Eventarc Trigger..."
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.project_id=$SUBSCRIBER_PROJECT_ID AND logName:cloudfunctions.googleapis.com/cloud-functions" \
+  --project=$SUBSCRIBER_PROJECT_ID \
+  --limit=50 \
+  --format="table(timestamp, textPayload)"
+```
+
+---
+
+## **5. scripts/inject_fault.sh**
+
+```bash
+#!/bin/bash
+
+set -e
+
+# Variables
+PUBLISHER_PROJECT_ID="your-publisher-project-id"
+TOPIC_NAME="cross-project-topic"
+
+# Publish a malformed message to test error handling
+gcloud pubsub topics publish $TOPIC_NAME \
+  --message="INVALID_MESSAGE" \
+  --attribute="invalid_key=invalid_value" \
+  --project=$PUBLISHER_PROJECT_ID
+
+echo "Faulty message published. Monitor logs for error handling."
+```
+
+---
+
+## **6. pubsub/publisher-role.yaml**
+
+```yaml
+title: "PubSub Publisher Role"
+description: "Custom role for publishing messages across projects"
+permissions:
+  - pubsub.topics.publish
+stage: "GA"
+```
+
+---
+
+## **7. pubsub/subscriber-role.yaml**
+
+```yaml
+title: "PubSub Subscriber Role"
+description: "Custom role for subscribing to messages across projects"
+permissions:
+  - pubsub.subscriptions.consume
+  - pubsub.subscriptions.acknowledge
+stage: "GA"
+```
+
+---
+
+## **8. eventarc/eventarc-trigger.yaml**
+
+```yaml
+apiVersion: eventarc.cnrm.cloud.google.com/v1beta1
+kind: EventarcTrigger
+metadata:
+  name: pubsub-trigger
+spec:
+  destination:
+    cloudRunService: your-cloud-run-service
+    cloudRunRegion: us-central1
+  eventFilters:
+    - attribute: type
+      value: google.cloud.pubsub.topic.v1.messagePublished
+  serviceAccount: your-subscriber-service-account
+```
+
+---
+
+### **How to Use This Repository**
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/your-username/cross-project-pubsub.git
+   cd cross-project-pubsub
+   ```
+
+2. Edit the variables in the scripts and YAML files with your project IDs and service details.
+
+3. Run the setup script to configure Pub/Sub and Eventarc.
+
+4. Test the setup, monitor logs, and inject faults as needed.
+
+---
+
+### **Next Steps**
+
+- Push the repository to your GitHub account.
+- Collaborate with your team to extend or modify the setup.
+- Use Cloud Monitoring and Error Reporting for advanced observability.
+
+Let me know if you need further assistance!
