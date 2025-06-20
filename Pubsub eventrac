@@ -965,3 +965,373 @@ Let me know if you'd like a **Terraform version**, **Cloud Run alternative**, or
 
 
 #########################################################
+
+GR:
+
+I'll create a comprehensive example demonstrating Google Cloud Pub/Sub cross-project interactions using IAM policies and Eventarc, including gcloud commands for setup, testing, monitoring, and fault injection. The code will be structured for a GitHub repository that you can clone.
+
+The example involves two projects:
+- **Project A**: Hosts the Pub/Sub topic and publishes messages.
+- **Project B**: Hosts the Cloud Run service and Eventarc trigger to receive events.
+
+Below is the content for the GitHub repository, including scripts and documentation.
+
+
+# Google Cloud Pub/Sub Cross-Project with Eventarc
+
+This repository demonstrates how to set up Google Cloud Pub/Sub for cross-project interactions using IAM policies and Eventarc, including testing, monitoring, and fault injection. It uses `gcloud` commands to configure two Google Cloud projects: one hosting a Pub/Sub topic and another hosting a Cloud Run service with an Eventarc trigger.
+
+## Prerequisites
+
+- Google Cloud SDK (`gcloud`) installed.
+- Two Google Cloud projects:
+  - **Project A**: For the Pub/Sub topic.
+  - **Project B**: For the Cloud Run service and Eventarc trigger.
+- Billing enabled for both projects.
+- Permissions: You need `roles/owner` or equivalent IAM roles on both projects to execute the setup commands.
+
+## Setup Instructions
+
+### Step 1: Set Environment Variables
+
+Define the project IDs and other variables. Replace `PROJECT_A_ID`, `PROJECT_B_ID`, `PROJECT_A_NUMBER`, `PROJECT_B_NUMBER`, and `REGION` with your values.
+
+```bash
+export PROJECT_A_ID=your-project-a-id
+export PROJECT_B_ID=your-project-b-id
+export PROJECT_A_NUMBER=your-project-a-number
+export PROJECT_B_NUMBER=your-project-b-number
+export REGION=us-central1
+export TOPIC_NAME=cross-project-topic
+export SERVICE_NAME=eventarc-service
+export TRIGGER_NAME=cross-project-trigger
+```
+
+You can find your project numbers using:
+```bash
+gcloud projects describe $PROJECT_A_ID --format='value(projectNumber)'
+gcloud projects describe $PROJECT_B_ID --format='value(projectNumber)'
+```
+
+### Step 2: Enable APIs
+
+Enable required APIs in both projects.
+
+**Project A**:
+```bash
+gcloud config set project $PROJECT_A_ID
+gcloud services enable pubsub.googleapis.com
+```
+
+**Project B**:
+```bash
+gcloud config set project $PROJECT_B_ID
+gcloud services enable run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+```
+
+### Step 3: Create Pub/Sub Topic in Project A
+
+Create a Pub/Sub topic in Project A.
+
+```bash
+gcloud config set project $PROJECT_A_ID
+gcloud pubsub topics create $TOPIC_NAME
+```
+
+### Step 4: Set Up IAM Policies for Cross-Project Access
+
+Grant Project B's Compute Engine default service account permission to publish to the topic in Project A.
+
+```bash
+gcloud pubsub topics add-iam-policy-binding projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/pubsub.publisher
+```
+
+Grant the Pub/Sub service agent in Project B the ability to create authentication tokens (required for Eventarc).
+
+```bash
+gcloud config set project $PROJECT_B_ID
+gcloud projects add-iam-policy-binding $PROJECT_B_ID \
+  --member=serviceAccount:service-$PROJECT_B_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+Grant the Compute Engine default service account in Project B the Eventarc Event Receiver role.
+
+```bash
+gcloud projects add-iam-policy-binding $PROJECT_B_ID \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/eventarc.eventReceiver
+```
+
+### Step 5: Deploy Cloud Run Service in Project B
+
+Clone a sample Cloud Run application that logs Pub/Sub events and deploy it.
+
+```bash
+gcloud config set project $PROJECT_B_ID
+git clone https://github.com/GoogleCloudPlatform/dotnet-docs-samples.git
+cd dotnet-docs-samples/eventarc/audit_storage
+gcloud run deploy $SERVICE_NAME \
+  --image=us-docker.pkg.dev/cloudrun/container/hello \
+  --region=$REGION \
+  --allow-unauthenticated
+```
+
+### Step 6: Create Eventarc Trigger in Project B
+
+Create an Eventarc trigger to connect the Pub/Sub topic in Project A to the Cloud Run service in Project B.
+
+```bash
+gcloud eventarc triggers create $TRIGGER_NAME \
+  --destination-run-service=$SERVICE_NAME \
+  --destination-run-region=$REGION \
+  --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished" \
+  --location=$REGION \
+  --transport-topic=projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --service-account=$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com
+```
+
+### Step 7: Save Setup Script
+
+Save the above commands as a setup script for reproducibility.
+
+```bash
+#!/bin/bash
+# setup.sh
+
+# Environment variables
+export PROJECT_A_ID=your-project-a-id
+export PROJECT_B_ID=your-project-b-id
+export PROJECT_A_NUMBER=your-project-a-number
+export PROJECT_B_NUMBER=your-project-b-number
+export REGION=us-central1
+export TOPIC_NAME=cross-project-topic
+export SERVICE_NAME=eventarc-service
+export TRIGGER_NAME=cross-project-trigger
+
+# Enable APIs in Project A
+gcloud config set project $PROJECT_A_ID
+gcloud services enable pubsub.googleapis.com
+
+# Enable APIs in Project B
+gcloud config set project $PROJECT_B_ID
+gcloud services enable run.googleapis.com eventarc.googleapis.com pubsub.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+
+# Create Pub/Sub topic in Project A
+gcloud config set project $PROJECT_A_ID
+gcloud pubsub topics create $TOPIC_NAME
+
+# Set IAM policies
+gcloud pubsub topics add-iam-policy-binding projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/pubsub.publisher
+
+gcloud config set project $PROJECT_B_ID
+gcloud projects add-iam-policy-binding $PROJECT_B_ID \
+  --member=serviceAccount:service-$PROJECT_B_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com \
+  --role=roles/iam.serviceAccountTokenCreator
+
+gcloud projects add-iam-policy-binding $PROJECT_B_ID \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/eventarc.eventReceiver
+
+# Deploy Cloud Run service
+git clone https://github.com/GoogleCloudPlatform/dotnet-docs-samples.git
+cd dotnet-docs-samples/eventarc/audit_storage
+gcloud run deploy $SERVICE_NAME \
+  --image=us-docker.pkg.dev/cloudrun/container/hello \
+  --region=$REGION \
+  --allow-unauthenticated
+
+# Create Eventarc trigger
+gcloud eventarc triggers create $TRIGGER_NAME \
+  --destination-run-service=$SERVICE_NAME \
+  --destination-run-region=$REGION \
+  --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished" \
+  --location=$REGION \
+  --transport-topic=projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --service-account=$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com
+```
+
+### Testing
+
+Test the setup by publishing a message to the Pub/Sub topic in Project A and verifying it in Project B's Cloud Run logs.
+
+```bash
+# test.sh
+#!/bin/bash
+
+export PROJECT_A_ID=your-project-a-id
+export PROJECT_B_ID=your-project-b-id
+export TOPIC_NAME=cross-project-topic
+export SERVICE_NAME=eventarc-service
+
+# Publish a test message
+gcloud config set project $PROJECT_A_ID
+gcloud pubsub topics publish projects/$PROJECT_A_ID/topics/$TOPIC_NAME --message="Test message"
+
+# Check Cloud Run logs in Project B
+gcloud config set project $PROJECT_B_ID
+gcloud logging read "resource.labels.service_name=$SERVICE_NAME AND jsonPayload.message:\"Test message\"" --format=json
+```
+
+### Monitoring
+
+Monitor the Pub/Sub topic and Eventarc trigger to ensure messages are processed correctly.
+
+```bash
+# monitor.sh
+#!/bin/bash
+
+export PROJECT_A_ID=your-project-a-id
+export PROJECT_B_ID=your-project-b-id
+export TOPIC_NAME=cross-project-topic
+export TRIGGER_NAME=cross-project-trigger
+export REGION=us-central1
+
+# Monitor Pub/Sub topic in Project A
+gcloud config set project $PROJECT_A_ID
+gcloud pubsub topics describe projects/$PROJECT_A_ID/topics/$TOPIC_NAME
+
+# Monitor Eventarc trigger in Project B
+gcloud config set project $PROJECT_B_ID
+gcloud eventarc triggers describe $TRIGGER_NAME --location=$REGION
+
+# Check Cloud Run logs for errors
+gcloud logging read "resource.labels.service_name=eventarc-service AND severity>=ERROR" --format=json
+```
+
+### Fault Injection
+
+Introduce faults to test error handling, such as removing IAM permissions or sending invalid messages.
+
+```bash
+# fault_injection.sh
+#!/bin/bash
+
+export PROJECT_A_ID=your-project-a-id
+export PROJECT_B_ID=your-project-b-id
+export PROJECT_B_NUMBER=your-project-b-number
+export TOPIC_NAME=cross-project-topic
+export SERVICE_NAME=eventarc-service
+
+# Fault 1: Remove publisher permission to simulate access denial
+gcloud config set project $PROJECT_A_ID
+gcloud pubsub topics remove-iam-policy-binding projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/pubsub.publisher
+
+# Try publishing a message (should fail)
+gcloud pubsub topics publish projects/$PROJECT_A_ID/topics/$TOPIC_NAME --message="Fault test" || echo "Expected failure due to missing permissions"
+
+# Restore permission
+gcloud pubsub topics add-iam-policy-binding projects/$PROJECT_A_ID/topics/$TOPIC_NAME \
+  --member=serviceAccount:$PROJECT_B_NUMBER-compute@developer.gserviceaccount.com \
+  --role=roles/pubsub.publisher
+
+# Fault 2: Publish malformed message (e.g., empty message)
+gcloud pubsub topics publish projects/$PROJECT_A_ID/topics/$TOPIC_NAME --message=""
+
+# Check logs for errors in Project B
+gcloud config set project $PROJECT_B_ID
+gcloud logging read "resource.labels.service_name=$SERVICE_NAME AND severity>=ERROR" --format=json
+```
+
+## Repository Structure
+
+```
+cross-project-pubsub-eventarc/
+├── README.md
+├── setup.sh
+├── test.sh
+├── monitor.sh
+├── fault_injection.sh
+```
+
+## How to Use
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/cross-project-pubsub-eventarc.git
+   cd cross-project-pubsub-eventarc
+   ```
+
+2. Update environment variables in each script with your project IDs, numbers, and region.
+
+3. Make scripts executable:
+   ```bash
+   chmod +x setup.sh test.sh monitor.sh fault_injection.sh
+   ```
+
+4. Run the setup script:
+   ```bash
+   ./setup.sh
+   ```
+
+5. Test the setup:
+   ```bash
+   ./test.sh
+   ```
+
+6. Monitor the system:
+   ```bash
+   ./monitor.sh
+   ```
+
+7. Inject faults to test error handling:
+   ```bash
+   ./fault_injection.sh
+   ```
+
+## Notes
+
+- **IAM Propagation**: IAM policy changes may take a few minutes to propagate. If you encounter HTTP 403 errors, wait and retry.
+- **Security**: The Cloud Run service is set to allow unauthenticated access for simplicity. In production, use authenticated services and follow the principle of least privilege.
+- **Cleanup**: To avoid costs, delete resources after testing:
+  ```bash
+  gcloud config set project $PROJECT_B_ID
+  gcloud eventarc triggers delete $TRIGGER_NAME --location=$REGION
+  gcloud run services delete $SERVICE_NAME --region=$REGION
+  gcloud config set project $PROJECT_A_ID
+  gcloud pubsub topics delete $TOPIC_NAME
+  ```
+
+## References
+
+- Google Cloud Pub/Sub Documentation: https://cloud.google.com/pubsub/docs
+- Eventarc Documentation: https://cloud.google.com/eventarc/docs
+- IAM Policy Management: https://cloud.google.com/pubsub/docs/access-control
+- Eventarc Cross-Project Tutorial: https://cloud.google.com/eventarc/docs/routing-cross-project
+
+
+
+### GitHub Repository Creation
+
+Since I cannot create a GitHub repository directly, you can follow these steps to create one and push the content:
+
+1. **Create a Repository on GitHub**:
+   - Go to https://github.com/new.
+   - Name the repository, e.g., `cross-project-pubsub-eventarc`.
+   - Choose public or private, and initialize with a README if desired.
+
+2. **Clone the Repository Locally**:
+   ```bash
+   git clone https://github.com/your-username/cross-project-pubsub-eventarc.git
+   cd cross-project-pubsub-eventarc
+   ```
+
+3. **Create Files**:
+   - Copy the content from the `<xaiArtifact>` above into `README.md`.
+   - Create `setup.sh`, `test.sh`, `monitor.sh`, and `fault_injection.sh` by extracting the respective script sections from the `README.md` into separate files.
+
+4. **Add, Commit, and Push**:
+   ```bash
+   git add .
+   git commit -m "Initial commit with Pub/Sub and Eventarc cross-project setup"
+   git push origin main
+   ```
+
+You can now clone the repository and use the scripts as described in the `README.md`. The scripts include all necessary `gcloud` commands for setup, testing, monitoring, and fault injection, tailored for cross-project Pub/Sub interactions with Eventarc and IAM policies.[](https://cloud.google.com/eventarc/docs/cross-project-triggers)
+
