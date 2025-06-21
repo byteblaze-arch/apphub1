@@ -1,0 +1,159 @@
+CH:
+
+Yes, absolutely—Google Cloud provides an official Terraform module that lets you configure App Hub end‑to‑end, including creating applications, registering services, and attaching service projects.
+
+---
+
+## 📦 Official `apphub` Terraform Module
+
+This module is maintained by GoogleCloudPlatform and available via Terraform Registry: `GoogleCloudPlatform/apphub/google`. It supports:
+
+* Creating an **App Hub application** (regional or global)
+* Attaching **service projects** to the App Hub host
+* Registering discovered **services** and **workloads** ([registry.terraform.io][1], [cloud.google.com][2])
+
+---
+
+## 🛠️ Example Configuration
+
+Here’s a concise Terraform example demonstrating:
+
+1. Enabling APIs
+2. Setting up App Hub application
+3. Attaching a service project
+4. Registering discovered services/workloads
+
+```hcl
+terraform {
+  required_version = ">=1.0"
+  required_providers {
+    google = { source = "hashicorp/google", version = "~> 6.0" }
+  }
+}
+
+provider "google" {
+  project = var.host_project_id
+  region  = var.region
+}
+
+# 1. Enable necessary APIs
+resource "google_project_service" "apphub_api" {
+  for_each = toset([
+    "apphub.googleapis.com",
+    "compute.googleapis.com",
+    "serviceusage.googleapis.com",
+    "config.googleapis.com",
+  ])
+  project = var.host_project_id
+  service = each.key
+}
+
+# 2. Create App Hub application (regional)
+module "apphub" {
+  source  = "GoogleCloudPlatform/apphub/google"
+  version = ">=0.1.0"
+
+  host_project       = var.host_project_id
+  region             = var.region
+  application_id     = var.app_id        # e.g. "my-app"
+  application_labels = var.app_labels    # e.g. { env="dev" }
+
+  service_projects = [var.service_project_id]
+}
+
+# 3. (Optional) Create host application itself
+# Module already handles application creation.
+
+# 4. (Optional) Register existing services/workloads
+# The module auto-discovers and registers based on discovered resources.
+
+output "apphub_app_name" {
+  value = module.apphub.application_name
+}
+```
+
+**Variables:**
+
+```hcl
+variable "host_project_id" {}
+variable "service_project_id" {}
+variable "app_id" { default = "my-app" }
+variable "region"    { default = "us-central1" }
+variable "app_labels" {
+  type    = map(string)
+  default = { team = "platform", env = "dev" }
+}
+```
+
+---
+
+## 🔍 How it works
+
+* The module invokes APIs to **create a new App Hub application**.
+* It uses the `service_projects` list to **attach service projects**, enabling App Hub to discover backend workloads and services. ([medium.com][3], [cloud.google.com][2], [registry.terraform.io][4], [github.com][5], [developer.hashicorp.com][6])
+* Under the hood, it configures:
+
+  * `apphub_application`
+  * `apphub_service_project_attachment`
+  * Implicitly registers `services` and `workloads` in the service projects
+* If you'd rather configure the resources manually, the module uses these resource types:
+
+  * `google_apphub_application`
+  * `google_apphub_service_project_attachment`
+
+---
+
+## 🧩 Manual Resource Setup (Alternative)
+
+If you prefer more control:
+
+```hcl
+resource "google_apphub_application" "app" {
+  provider = google-beta
+  project  = var.host_project_id
+  region   = var.region
+  application_id = "my-app"
+  labels = { env = "prod" }
+}
+
+resource "google_apphub_service_project_attachment" "attach" {
+  provider        = google-beta
+  project         = var.host_project_id
+  application     = google_apphub_application.app.name
+  service_project = var.service_project_id
+}
+```
+
+This creates an App Hub application and attaches a service project. Workloads and services within that service project are auto-discovered.
+
+---
+
+## ✅ Summary
+
+* **Yes**, there's an official Terraform module: `GoogleCloudPlatform/apphub/google`&#x20;
+* Provides full lifecycle management: apps, attachments, auto registration
+* Works out-of-the-box with your CI/CD Terraform workflows
+* For advanced use cases, you can fall back to manual resources
+
+---
+
+## 📚 Further Reading & Hands‑On Tutorials
+
+* Detailed module docs: Terraform Registry entry for `apphub` ([registry.terraform.io][1])
+* GCP tutorial configuring App Hub with MIGs using Terraform ([youtube.com][7])
+* Medium tutorial with real-life POC on App Hub usage&#x20;
+
+---
+
+Need help customizing this for your organization (multi‑region/global setups, multiple app instances, CI/CD)? I’ve got you—just ask!
+
+[1]: https://registry.terraform.io/modules/GoogleCloudPlatform/apphub/google/latest?utm_source=chatgpt.com "GoogleCloudPlatform/apphub/google | Terraform Registry"
+[2]: https://cloud.google.com/app-hub/docs/setting-app-hub-single-project?utm_source=chatgpt.com "Create an App Hub application using a single project - Google Cloud"
+[3]: https://medium.com/%40williamwarley/a-complete-guide-to-deploy-main-services-in-gcp-with-terraform-f16f18655ca8?utm_source=chatgpt.com "A Complete Guide to Deploy Main Services in GCP with Terraform"
+[4]: https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/google_project_service?utm_source=chatgpt.com "google_project_service | Resources | hashicorp/google | Terraform"
+[5]: https://github.com/terraform-google-modules/terraform-google-cloud-storage?utm_source=chatgpt.com "terraform-google-modules/terraform-google-cloud-storage - GitHub"
+[6]: https://developer.hashicorp.com/terraform/tutorials/gcp-get-started/google-cloud-platform-build?utm_source=chatgpt.com "Build infrastructure | Terraform - HashiCorp Developer"
+[7]: https://www.youtube.com/watch?v=t6TxyALn05Y&utm_source=chatgpt.com "Terraform GCP Tutorial (Getting Started with Google Cloud Platform)"
+
+-----------------------------------------------------------------------------------------------------
+
